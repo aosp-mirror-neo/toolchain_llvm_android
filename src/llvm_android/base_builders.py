@@ -212,9 +212,9 @@ class Builder:  # pylint: disable=too-few-public-methods
     def ldflags(self) -> List[str]:
         """Additional ldflags to use."""
         ldflags = []
-        # When cross compiling, toolchain libs won't work on target arch.
-        if not self._config.is_cross_compiling and not isinstance(self._config, configs.LinuxMuslConfig):
-            # at least swig and libncurses need to link with lib/libc++.so
+        # Darwin doesn't add the path to the clang libc++ to the library
+        # search path when -std=libc++ is used, everything else does.
+        if self._config.target_os.is_darwin and not self._config.is_cross_compiling:
             for lib_dir in self.toolchain.lib_dirs:
                 ldflags.append(f'-L{lib_dir}')
         return ldflags
