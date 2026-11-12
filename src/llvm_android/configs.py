@@ -730,10 +730,11 @@ class AndroidI386Config(AndroidConfig):
 def host_config(musl: bool=False) -> Config:
     """Returns the Config matching the current machine."""
     return {
-        hosts.Host.Linux: LinuxMuslHostConfig if musl else LinuxConfig,
-        hosts.Host.Darwin: DarwinConfig,
-        hosts.Host.Windows: MinGWConfig
-    }[hosts.build_host()]()
+        hosts.Host.Linux: LinuxMuslHostConfig(hosts.build_arch()) if musl
+          else LinuxConfig(hosts.build_arch()),
+        hosts.Host.Darwin: DarwinConfig(),
+        hosts.Host.Windows: MinGWConfig()
+    }[hosts.build_host()]
 
 def host_32bit_config(musl: bool=False) -> Config:
     if hosts.build_host().is_darwin:
