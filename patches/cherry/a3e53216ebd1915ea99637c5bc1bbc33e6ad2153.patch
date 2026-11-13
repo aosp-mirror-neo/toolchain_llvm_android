@@ -1,0 +1,209 @@
+From a3e53216ebd1915ea99637c5bc1bbc33e6ad2153 Mon Sep 17 00:00:00 2001
+From: Nick Desaulniers <ndesaulniers@google.com>
+Date: Fri, 13 Nov 2026 09:53:28 -0800
+Subject: [PATCH] [clang][Sema] Check -Wunused-private-field at template
+ instantiation instead of definition (#237374)
+
+1. Fix a false positive to not warn when a private field of a
+`[[gnu::warn_unused]]` type in a class template is used by a templated
+function.
+2. Fix a false negative to warn when an instantiated class template has
+an unused private field.
+
+Fixes: #237370
+Assisted-by: Gemini
+---
+ clang/include/clang/AST/Decl.h                |  2 ++
+ clang/lib/AST/Decl.cpp                        | 28 +++++++++++++++
+ clang/lib/Sema/SemaDeclCXX.cpp                | 35 +------------------
+ .../lib/Sema/SemaTemplateInstantiateDecl.cpp  |  5 +++
+ clang/test/SemaCXX/uninitialized.cpp          |  2 +-
+ .../SemaCXX/warn-unused-private-field.cpp     | 34 ++++++++++++++++++
+ 6 files changed, 71 insertions(+), 35 deletions(-)
+
+diff --git a/clang/include/clang/AST/Decl.h b/clang/include/clang/AST/Decl.h
+index 3048e14a2da1f..c73300e7816bb 100644
+--- a/clang/include/clang/AST/Decl.h
++++ b/clang/include/clang/AST/Decl.h
+@@ -3540,6 +3540,8 @@ public:
+   /// \p nullptr if either the attribute or the field doesn't exist.
+   const FieldDecl *findCountedByField() const;
+ 
++  bool isUnusedPrivateField() const;
++
+ private:
+   void setLazyInClassInitializer(LazyDeclStmtPtr NewInit);
+ 
+diff --git a/clang/lib/AST/Decl.cpp b/clang/lib/AST/Decl.cpp
+index 72e082e9c969e..87901d0a08a9a 100644
+--- a/clang/lib/AST/Decl.cpp
++++ b/clang/lib/AST/Decl.cpp
+@@ -4973,6 +4973,34 @@ const FieldDecl *FieldDecl::findCountedByField() const {
+   return dyn_cast<FieldDecl>(CountDecl);
+ }
+ 
++static bool initializationHasSideEffects(const FieldDecl &FD) {
++  const Type *T = FD.getType()->getBaseElementTypeUnsafe();
++  // FIXME: Destruction of ObjC lifetime types has side-effects.
++  if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
++    return !RD->isCompleteDefinition() || !RD->hasTrivialDefaultConstructor() ||
++           !RD->hasTrivialDestructor();
++  return false;
++}
++
++template <typename AttrType> static bool hasAttribute(QualType T) {
++  if (const TagDecl *TD = T->getAsTagDecl())
++    return TD->hasAttr<AttrType>();
++  if (const TypedefType *TDT = T->getAs<TypedefType>())
++    return TDT->getDecl()->hasAttr<AttrType>();
++  return false;
++}
++
++bool FieldDecl::isUnusedPrivateField() const {
++  if (isImplicit() || !getDeclName() || getAccess() != AS_private ||
++      hasAttr<UnusedAttr>() || getParent()->isDependentContext())
++    return false;
++
++  QualType FieldType = getType();
++  return !hasAttribute<UnusedAttr>(FieldType) &&
++         (hasAttribute<WarnUnusedAttr>(FieldType) ||
++          !initializationHasSideEffects(*this));
++}
++
+ //===----------------------------------------------------------------------===//
+ // TagDecl Implementation
+ //===----------------------------------------------------------------------===//
+diff --git a/clang/lib/Sema/SemaDeclCXX.cpp b/clang/lib/Sema/SemaDeclCXX.cpp
+index 27b90e1a85ec0..cd021c660bf7b 100644
+--- a/clang/lib/Sema/SemaDeclCXX.cpp
++++ b/clang/lib/Sema/SemaDeclCXX.cpp
+@@ -3407,16 +3407,6 @@ bool Sema::CheckIfOverriddenFunctionIsMarkedFinal(const CXXMethodDecl *New,
+   return true;
+ }
+ 
+-static bool InitializationHasSideEffects(const FieldDecl &FD) {
+-  const Type *T = FD.getType()->getBaseElementTypeUnsafe();
+-  // FIXME: Destruction of ObjC lifetime types has side-effects.
+-  if (const CXXRecordDecl *RD = T->getAsCXXRecordDecl())
+-    return !RD->isCompleteDefinition() ||
+-           !RD->hasTrivialDefaultConstructor() ||
+-           !RD->hasTrivialDestructor();
+-  return false;
+-}
+-
+ void Sema::CheckShadowInheritedFields(const SourceLocation &Loc,
+                                       DeclarationName FieldName,
+                                       const CXXRecordDecl *RD,
+@@ -3467,29 +3457,6 @@ void Sema::CheckShadowInheritedFields(const SourceLocation &Loc,
+   }
+ }
+ 
+-template <typename AttrType>
+-inline static bool HasAttribute(const QualType &T) {
+-  if (const TagDecl *TD = T->getAsTagDecl())
+-    return TD->hasAttr<AttrType>();
+-  if (const TypedefType *TDT = T->getAs<TypedefType>())
+-    return TDT->getDecl()->hasAttr<AttrType>();
+-  return false;
+-}
+-
+-static bool IsUnusedPrivateField(const FieldDecl *FD) {
+-  if (FD->getAccess() == AS_private && FD->getDeclName()) {
+-    QualType FieldType = FD->getType();
+-    if (HasAttribute<WarnUnusedAttr>(FieldType))
+-      return true;
+-
+-    return !FD->isImplicit() && !FD->hasAttr<UnusedAttr>() &&
+-           !FD->getParent()->isDependentContext() &&
+-           !HasAttribute<UnusedAttr>(FieldType) &&
+-           !InitializationHasSideEffects(*FD);
+-  }
+-  return false;
+-}
+-
+ NamedDecl *
+ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
+                                MultiTemplateParamsArg TemplateParameterLists,
+@@ -3783,7 +3750,7 @@ Sema::ActOnCXXMemberDeclarator(Scope *S, AccessSpecifier AS, Declarator &D,
+     FieldCollector->Add(FD);
+ 
+     if (!Diags.isIgnored(diag::warn_unused_private_field, FD->getLocation()) &&
+-        IsUnusedPrivateField(FD)) {
++        FD->isUnusedPrivateField()) {
+       // Remember all explicit private FieldDecls that have a name, no side
+       // effects and are not part of a dependent type declaration.
+       UnusedPrivateFields.insert(FD);
+diff --git a/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp b/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp
+index 9e277c902365f..a4ce596c7bfb1 100644
+--- a/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp
++++ b/clang/lib/Sema/SemaTemplateInstantiateDecl.cpp
+@@ -1967,6 +1967,11 @@ Decl *TemplateDeclInstantiator::VisitFieldDecl(FieldDecl *D) {
+   Field->setAccess(D->getAccess());
+   Owner->addDecl(Field);
+ 
++  if (!SemaRef.Diags.isIgnored(diag::warn_unused_private_field,
++                               Field->getLocation()) &&
++      Field->isUnusedPrivateField())
++    SemaRef.UnusedPrivateFields.insert(Field);
++
+   return Field;
+ }
+ 
+diff --git a/clang/test/SemaCXX/uninitialized.cpp b/clang/test/SemaCXX/uninitialized.cpp
+index 9ecea1ac4cc3b..0e90bb67840ad 100644
+--- a/clang/test/SemaCXX/uninitialized.cpp
++++ b/clang/test/SemaCXX/uninitialized.cpp
+@@ -593,7 +593,7 @@ namespace rdar10398199 {
+   };
+   void stuff();
+   template <typename T> class FooImpl : public Foo {
+-    T val;
++    T val; // expected-warning 2{{private field 'val' is not used}}
+   public:
+     FooImpl(const T &x) : val(x) {}
+     ~FooImpl() { stuff(); }
+diff --git a/clang/test/SemaCXX/warn-unused-private-field.cpp b/clang/test/SemaCXX/warn-unused-private-field.cpp
+index 0bcca6b82227f..650a2cffc557e 100644
+--- a/clang/test/SemaCXX/warn-unused-private-field.cpp
++++ b/clang/test/SemaCXX/warn-unused-private-field.cpp
+@@ -354,3 +354,37 @@ private:
+   T t2;            // ok
+ };
+ }
++
++namespace warn_unused_template {
++struct [[gnu::warn_unused]] WarnUnusedType {};
++
++template <typename T>
++struct Outer {
++  class Inner {
++    friend struct Outer<T>;
++    WarnUnusedType field_;
++  };
++
++  WarnUnusedType use(Inner &i) {
++    return i.field_;
++  }
++};
++WarnUnusedType test() {
++  Outer<int> o;
++  Outer<int>::Inner i;
++  return o.use(i);
++}
++
++template <typename T>
++struct Outer2 {
++  class Inner {
++    WarnUnusedType field_; // expected-warning {{private field 'field_' is not used}}
++  };
++};
++void test2() {
++  Outer2<int> o;
++  Outer2<int>::Inner i;
++  (void)o;
++  (void)i;
++}
++} // namespace warn_unused_template
+-- 
+2.56.0.611.g1030f0b940-goog
+

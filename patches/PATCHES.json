@@ -1038,6 +1038,62 @@
     {
         "metadata": {
             "info": [],
+            "title": "[UPSTREAM] [libcxx] mark intentionally unused fields [[maybe_unused]] (#241054)"
+        },
+        "platforms": [
+            "android"
+        ],
+        "rel_patch_path": "cherry/1dde95c1d1faa086ffa9fb8cce5aa98b9826e99b.patch",
+        "version_range": {
+            "from": 639965,
+            "until": 645845
+        }
+    },
+    {
+        "metadata": {
+            "info": [],
+            "title": "[UPSTREAM] [compiler-rt] mark padding [[maybe_unused]] (#241052)"
+        },
+        "platforms": [
+            "android"
+        ],
+        "rel_patch_path": "cherry/64969dbb4d7ac4fbb75f1037405a2dec6e91934d.patch",
+        "version_range": {
+            "from": 639965,
+            "until": 645846
+        }
+    },
+    {
+        "metadata": {
+            "info": [],
+            "title": "[UPSTREAM] [libcxxabi] fix -Wunused-private-field (#241575)"
+        },
+        "platforms": [
+            "android"
+        ],
+        "rel_patch_path": "cherry/21b58bf0be1a4cc64a3e499f572ee90b23eb0c6a.patch",
+        "version_range": {
+            "from": 639965,
+            "until": 646158
+        }
+    },
+    {
+        "metadata": {
+            "info": [],
+            "title": "[UPSTREAM] [clang][Sema] Check -Wunused-private-field at template instantiation instead of definition (#237374)"
+        },
+        "platforms": [
+            "android"
+        ],
+        "rel_patch_path": "cherry/a3e53216ebd1915ea99637c5bc1bbc33e6ad2153.patch",
+        "version_range": {
+            "from": 639965,
+            "until": 646451
+        }
+    },
+    {
+        "metadata": {
+            "info": [],
             "title": "Increase max allocation size to allow BOLTing clang and rustc"
         },
         "platforms": [

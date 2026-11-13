@@ -1,0 +1,32 @@
+From 21b58bf0be1a4cc64a3e499f572ee90b23eb0c6a Mon Sep 17 00:00:00 2001
+From: Nick Desaulniers <ndesaulniers@google.com>
+Date: Thu, 12 Nov 2026 09:36:35 -0800
+Subject: [PATCH] [libcxxabi] fix -Wunused-private-field (#241575)
+
+-Wunused-private-field will soon be able to flag fields in instantiated
+class templates. Land this in preparation.
+
+The lone new instance is only defined when BUILDING_CXA_GUARD is
+defined.
+
+Link: #237374
+---
+ libcxxabi/src/cxa_guard_impl.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/libcxxabi/src/cxa_guard_impl.h b/libcxxabi/src/cxa_guard_impl.h
+index 5f51e81c57209..890076b800d45 100644
+--- a/libcxxabi/src/cxa_guard_impl.h
++++ b/libcxxabi/src/cxa_guard_impl.h
+@@ -406,7 +406,7 @@ private:
+     }
+ 
+   private:
+-    const char* const calling_func_;
++    [[maybe_unused]] const char* const calling_func_;
+   };
+ };
+ 
+-- 
+2.56.0.611.g1030f0b940-goog
+

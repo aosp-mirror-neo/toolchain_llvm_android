@@ -1,0 +1,212 @@
+From 1dde95c1d1faa086ffa9fb8cce5aa98b9826e99b Mon Sep 17 00:00:00 2001
+From: Nick Desaulniers <ndesaulniers@google.com>
+Date: Wed, 11 Nov 2026 08:51:55 -0800
+Subject: [PATCH] [libcxx] mark intentionally unused fields [[maybe_unused]]
+ (#241054)
+
+-Wunused-private-field will soon be able to flag fields in instantiated
+class templates. Land this in preparation.
+
+Link: #237374
+---
+ libcxx/include/__memory/compressed_pair.h                       | 2 +-
+ .../test/libcxx/containers/associative/map/abi.compile.pass.cpp | 2 +-
+ .../test/libcxx/containers/associative/set/abi.compile.pass.cpp | 2 +-
+ .../containers/associative/unord.map/abi.compile.pass.cpp       | 2 +-
+ .../containers/associative/unord.set/abi.compile.pass.cpp       | 2 +-
+ .../test/libcxx/containers/sequences/deque/abi.compile.pass.cpp | 2 +-
+ .../containers/sequences/forwardlist/abi.compile.pass.cpp       | 2 +-
+ .../test/libcxx/containers/sequences/list/abi.compile.pass.cpp  | 2 +-
+ .../containers/sequences/vector.bool/abi.compile.pass.cpp       | 2 +-
+ .../libcxx/containers/sequences/vector/abi.compile.pass.cpp     | 2 +-
+ libcxx/test/libcxx/strings/basic.string/abi.compile.pass.cpp    | 2 +-
+ .../test/libcxx/strings/basic.string/alignof.compile.pass.cpp   | 2 +-
+ libcxx/test/libcxx/strings/basic.string/sizeof.compile.pass.cpp | 2 +-
+ .../has_unique_object_representations.compile.pass.cpp          | 2 +-
+ 14 files changed, 14 insertions(+), 14 deletions(-)
+
+diff --git a/libcxx/include/__memory/compressed_pair.h b/libcxx/include/__memory/compressed_pair.h
+index 8fa0e64714f2b..08d2aa7774be3 100644
+--- a/libcxx/include/__memory/compressed_pair.h
++++ b/libcxx/include/__memory/compressed_pair.h
+@@ -77,7 +77,7 @@ inline const bool __is_reference_or_unpadded_object<_Tp&&> = true;
+ 
+ template <class _ToPad, bool _Empty = __is_reference_or_unpadded_object<_ToPad> >
+ class __compressed_pair_padding {
+-  char __padding_[sizeof(_ToPad) - __datasizeof_v<_ToPad>] = {};
++  [[__maybe_unused__]] char __padding_[sizeof(_ToPad) - __datasizeof_v<_ToPad>] = {};
+ };
+ 
+ template <class _ToPad>
+diff --git a/libcxx/test/libcxx/containers/associative/map/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/associative/map/abi.compile.pass.cpp
+index ca4e9747bc490..18cad9a80b2dd 100644
+--- a/libcxx/test/libcxx/containers/associative/map/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/associative/map/abi.compile.pass.cpp
+@@ -17,7 +17,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/associative/set/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/associative/set/abi.compile.pass.cpp
+index 14f89b6c9deae..c7518f1d87b4a 100644
+--- a/libcxx/test/libcxx/containers/associative/set/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/associative/set/abi.compile.pass.cpp
+@@ -17,7 +17,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/associative/unord.map/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/associative/unord.map/abi.compile.pass.cpp
+index a9fafe0452ac3..cb67fe8070e9b 100644
+--- a/libcxx/test/libcxx/containers/associative/unord.map/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/associative/unord.map/abi.compile.pass.cpp
+@@ -21,7 +21,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/associative/unord.set/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/associative/unord.set/abi.compile.pass.cpp
+index 0216cb1213edf..bb85ec71cd89e 100644
+--- a/libcxx/test/libcxx/containers/associative/unord.set/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/associative/unord.set/abi.compile.pass.cpp
+@@ -21,7 +21,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/sequences/deque/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/sequences/deque/abi.compile.pass.cpp
+index 7eaf64ea09d13..a936cdb016217 100644
+--- a/libcxx/test/libcxx/containers/sequences/deque/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/sequences/deque/abi.compile.pass.cpp
+@@ -17,7 +17,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/sequences/forwardlist/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/sequences/forwardlist/abi.compile.pass.cpp
+index cb500f9c4d61b..bbabce6314537 100644
+--- a/libcxx/test/libcxx/containers/sequences/forwardlist/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/sequences/forwardlist/abi.compile.pass.cpp
+@@ -15,7 +15,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/sequences/list/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/sequences/list/abi.compile.pass.cpp
+index 4b9c295c46f2c..fc9c3d508877e 100644
+--- a/libcxx/test/libcxx/containers/sequences/list/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/sequences/list/abi.compile.pass.cpp
+@@ -17,7 +17,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/sequences/vector.bool/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/sequences/vector.bool/abi.compile.pass.cpp
+index 598d54ffb91a0..9067fc4c731a7 100644
+--- a/libcxx/test/libcxx/containers/sequences/vector.bool/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/sequences/vector.bool/abi.compile.pass.cpp
+@@ -17,7 +17,7 @@
+ 
+ template <class T>
+ class small_pointer {
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/containers/sequences/vector/abi.compile.pass.cpp b/libcxx/test/libcxx/containers/sequences/vector/abi.compile.pass.cpp
+index 6dc0504991b39..a53755e8b7bca 100644
+--- a/libcxx/test/libcxx/containers/sequences/vector/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/containers/sequences/vector/abi.compile.pass.cpp
+@@ -25,7 +25,7 @@ public:
+   using iterator_category = std::random_access_iterator_tag;
+ 
+ private:
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/strings/basic.string/abi.compile.pass.cpp b/libcxx/test/libcxx/strings/basic.string/abi.compile.pass.cpp
+index cf802e214d07c..de0db5d46421c 100644
+--- a/libcxx/test/libcxx/strings/basic.string/abi.compile.pass.cpp
++++ b/libcxx/test/libcxx/strings/basic.string/abi.compile.pass.cpp
+@@ -23,7 +23,7 @@ public:
+   using iterator_category = std::random_access_iterator_tag;
+ 
+ private:
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/strings/basic.string/alignof.compile.pass.cpp b/libcxx/test/libcxx/strings/basic.string/alignof.compile.pass.cpp
+index 49cbde14c568b..85a2355ffbd6f 100644
+--- a/libcxx/test/libcxx/strings/basic.string/alignof.compile.pass.cpp
++++ b/libcxx/test/libcxx/strings/basic.string/alignof.compile.pass.cpp
+@@ -28,7 +28,7 @@ public:
+   using iterator_category = std::random_access_iterator_tag;
+ 
+ private:
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/libcxx/strings/basic.string/sizeof.compile.pass.cpp b/libcxx/test/libcxx/strings/basic.string/sizeof.compile.pass.cpp
+index 31f1a94c73216..01f608768569e 100644
+--- a/libcxx/test/libcxx/strings/basic.string/sizeof.compile.pass.cpp
++++ b/libcxx/test/libcxx/strings/basic.string/sizeof.compile.pass.cpp
+@@ -26,7 +26,7 @@ public:
+   using iterator_category = std::random_access_iterator_tag;
+ 
+ private:
+-  std::uint16_t offset;
++  [[maybe_unused]] std::uint16_t offset;
+ };
+ 
+ template <class T>
+diff --git a/libcxx/test/std/utilities/meta/meta.unary/meta.unary.prop/has_unique_object_representations.compile.pass.cpp b/libcxx/test/std/utilities/meta/meta.unary/meta.unary.prop/has_unique_object_representations.compile.pass.cpp
+index 0836ebb6c5c8b..d9279e06b3d63 100644
+--- a/libcxx/test/std/utilities/meta/meta.unary/meta.unary.prop/has_unique_object_representations.compile.pass.cpp
++++ b/libcxx/test/std/utilities/meta/meta.unary/meta.unary.prop/has_unique_object_representations.compile.pass.cpp
+@@ -64,7 +64,7 @@ struct WithPadding {
+ 
+ template <int>
+ class NTTP_ClassType_WithoutPadding {
+-  int x;
++  [[maybe_unused]] int x;
+ };
+ 
+ void test() {
+-- 
+2.56.0.611.g1030f0b940-goog
+

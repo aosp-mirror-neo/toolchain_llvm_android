@@ -1,0 +1,53 @@
+From 64969dbb4d7ac4fbb75f1037405a2dec6e91934d Mon Sep 17 00:00:00 2001
+From: Nick Desaulniers <ndesaulniers@google.com>
+Date: Wed, 11 Nov 2026 08:52:27 -0800
+Subject: [PATCH] [compiler-rt] mark padding [[maybe_unused]] (#241052)
+
+-Wunused-private-field will soon be able to flag fields in instantiated
+class templates. Land this in preparation.
+
+Link: #237374
+---
+ compiler-rt/lib/sanitizer_common/sanitizer_quarantine.h     | 6 +++---
+ .../lib/sanitizer_common/tests/sanitizer_mutex_test.cpp     | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/compiler-rt/lib/sanitizer_common/sanitizer_quarantine.h b/compiler-rt/lib/sanitizer_common/sanitizer_quarantine.h
+index 460d96ea681b4..3f3223f24c60a 100644
+--- a/compiler-rt/lib/sanitizer_common/sanitizer_quarantine.h
++++ b/compiler-rt/lib/sanitizer_common/sanitizer_quarantine.h
+@@ -134,15 +134,15 @@ class Quarantine {
+ 
+  private:
+   // Read-only data.
+-  char pad0_[kCacheLineSize];
++  [[maybe_unused]] char pad0_[kCacheLineSize];
+   atomic_uintptr_t max_size_;
+   atomic_uintptr_t min_size_;
+   atomic_uintptr_t max_cache_size_;
+-  char pad1_[kCacheLineSize];
++  [[maybe_unused]] char pad1_[kCacheLineSize];
+   StaticSpinMutex cache_mutex_;
+   StaticSpinMutex recycle_mutex_;
+   Cache cache_;
+-  char pad2_[kCacheLineSize];
++  [[maybe_unused]] char pad2_[kCacheLineSize];
+ 
+   void NOINLINE Recycle(uptr min_size, Callback cb)
+       SANITIZER_REQUIRES(recycle_mutex_) SANITIZER_RELEASE(recycle_mutex_) {
+diff --git a/compiler-rt/lib/sanitizer_common/tests/sanitizer_mutex_test.cpp b/compiler-rt/lib/sanitizer_common/tests/sanitizer_mutex_test.cpp
+index 686dfe055c675..59f7d6f43a136 100644
+--- a/compiler-rt/lib/sanitizer_common/tests/sanitizer_mutex_test.cpp
++++ b/compiler-rt/lib/sanitizer_common/tests/sanitizer_mutex_test.cpp
+@@ -74,7 +74,7 @@ class TestData {
+   static const int kSize = 64;
+   typedef u64 T;
+   MutexType *mtx_;
+-  char pad_[kCacheLineSize];
++  [[maybe_unused]] char pad_[kCacheLineSize];
+   T data_[kSize];
+ };
+ 
+-- 
+2.56.0.611.g1030f0b940-goog
+
