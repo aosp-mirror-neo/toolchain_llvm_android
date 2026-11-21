@@ -441,7 +441,7 @@ class CMakeBuilder(Builder):
             defines['CMAKE_LIPO'] = str(self.toolchain.lipo)
         if self._config.target_os.is_windows:
             defines['CMAKE_RC_COMPILER'] = str(self.toolchain.rc)
-            defines['CMAKE_RC_FLAGS'] = f'-I {paths.MINGW_ROOT}/include/'
+            defines['CMAKE_RC_FLAGS'] = f'-I {self._config.sysroot}/include/'
         if self._config.is_cross_compiling:
             # Cross compiling
             defines['CMAKE_SYSTEM_NAME'] = self._get_cmake_system_name()

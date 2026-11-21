@@ -259,39 +259,6 @@ class DarwinConfig(_BaseConfig):
         # x86_64-apple-darwin is another choice
         return 'arm64-apple-darwin'
 
-class _GccConfig(_BaseConfig):  # pylint: disable=abstract-method
-    """Base config to use gcc libs."""
-
-    gcc_root: Path
-    gcc_triple: str
-    gcc_ver: str
-
-    def __init__(self, is_32_bit: bool = False):
-        self.is_32_bit = is_32_bit
-
-    @property
-    def bin_dirs(self) -> List[Path]:
-        return [self.gcc_root / self.gcc_triple / 'bin']
-
-    @property
-    def gcc_lib_dir(self) -> Path:
-        gcc_lib_dir = self.gcc_root / 'lib' / 'gcc' / self.gcc_triple / self.gcc_ver
-        if self.is_32_bit:
-            gcc_lib_dir = gcc_lib_dir / '32'
-        return gcc_lib_dir
-
-    @property
-    def gcc_builtin_dir(self)-> Path:
-        base = self.gcc_root / self.gcc_triple
-        if self.is_32_bit:
-            return base / 'lib32'
-        else:
-            return base / 'lib64'
-
-    @property
-    def lib_dirs(self) -> List[Path]:
-        return [self.gcc_lib_dir, self.gcc_builtin_dir]
-
 
 class LinuxConfig(_BaseConfig):
     """Configuration for Linux targets."""
@@ -440,15 +407,15 @@ class LinuxMuslHostConfig(LinuxMuslConfig):
         return env
 
 
-# TODO: We should kill off 32-bit Windows support, but we still need it because
-# we have a single 32-bit DLL for USB stuff for adb.exe/fastboot.exe.
-class MinGWConfig(_GccConfig):
+# TODO(b/433643986): Drop 32-bit Windows support once fastboot and adb stop
+# using the 32-bit AdbWinApi/AdbWinUsbApi DLLs and SDK tools move to x86_64.
+class MinGWConfig(_BaseConfig):
     """Configuration for MinGW targets."""
 
     target_os: hosts.Host = hosts.Host.Windows
-    gcc_root: Path = paths.GCC_ROOT / 'host' / 'x86_64-w64-mingw32-4.8'
-    gcc_triple: str = 'x86_64-w64-mingw32'
-    gcc_ver: str = '4.8.3'
+
+    def __init__(self, is_32_bit: bool = False):
+        self.is_32_bit = is_32_bit
 
     @property
     def target_arch(self) -> hosts.Arch:
@@ -474,19 +441,25 @@ class MinGWConfig(_GccConfig):
         cflags.append('-D_FILE_OFFSET_BITS=64')
         cflags.append('-D_WIN32_WINNT=0x0A00')
         cflags.append('-DWINVER=0x0A00')
-        cflags.append('-D__MSVCRT_VERSION__=0x1400')
-        # TODO(b/435461051): Remove these once MinGW is updated and has these constants.
-        cflags.append('-DWINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3=0x00002000')
-        cflags.append('-DWINHTTP_OPTION_ENABLE_HTTP_PROTOCOL=133')
-        cflags.append('-DWINHTTP_PROTOCOL_FLAG_HTTP2=0x1')
-        cflags.append('-DCERT_SHA256_HASH_PROP_ID=107')
         if self.target_arch == hosts.Arch.I386:
             cflags.append('-fsjlj-exceptions')
         return cflags
 
     @property
+    def cxxflags(self) -> List[str]:
+        return super().cxxflags + [
+            # -stdlib=libc++ prevents the "Check for working CXX compiler"
+            # step from failing when it can't find libstdc++.
+            # -Wno-unused-command-line-argument is necessary for commands that
+            # use -Werror -nostdinc++.
+            '-stdlib=libc++',
+            '-Wno-unused-command-line-argument',
+        ]
+
+    @property
     def ldflags(self) -> List[str]:
         ldflags = super().ldflags
+        ldflags.append('-rtlib=compiler-rt')
         if not self.is_32_bit:
             ldflags.append('-Wl,--dynamicbase')
             ldflags.append('-Wl,--nxcompat')
@@ -495,9 +468,14 @@ class MinGWConfig(_GccConfig):
         return ldflags
 
     @property
-    def lib_dirs(self) -> List[Path]:
-        # No need for explicit lib_dirs.  We copy them into the sysroot.
-        return []
+    def cmake_defines(self) -> Dict[str, str]:
+        defines = super().cmake_defines
+        defines['LIBCXX_USE_COMPILER_RT'] = 'TRUE'
+        defines['LIBCXXABI_USE_COMPILER_RT'] = 'TRUE'
+        defines['LIBUNWIND_USE_COMPILER_RT'] = 'TRUE'
+        defines['COMPILER_RT_USE_BUILTINS_LIBRARY'] = 'TRUE'
+
+        return defines
 
 
 class MSVCConfig(Config):

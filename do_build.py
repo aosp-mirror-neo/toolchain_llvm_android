@@ -105,6 +105,9 @@ def build_llvm_for_windows(enable_assertions: bool,
         shutil.rmtree(win_builder.install_dir)
 
     if not win_sdk.is_enabled():
+        # Build compiler-rt builtins
+        builders.WinBuiltinsBuilder().build()
+
         # Build and install libcxxabi and libcxx and use them to build Clang.
         libcxx_builder = builders.WinLibCxxBuilder(config_list)
         libcxx_builder.enable_assertions = enable_assertions
@@ -302,7 +305,7 @@ def install_license_files(install_dir: Path) -> None:
 def install_winpthreads(bin_dir: Path, lib_dir: Path) -> None:
     """Installs the winpthreads runtime to the Windows bin and lib directory."""
     lib_name = 'libwinpthread-1.dll'
-    lib_path = paths.MINGW_ROOT / 'bin' / lib_name
+    lib_path = paths.MINGW_ROOT / 'x86_64-w64-mingw32' / 'bin' / lib_name
 
     shutil.copy2(lib_path, lib_dir / lib_name)
     shutil.copy2(lib_path, bin_dir / lib_name)
@@ -725,6 +728,8 @@ def package_toolchain(toolchain_builder: LLVMBuilder,
                             f'../lib/clang/{version.major_version()}/include\n'
                             f'../lib/libxml2.so.{toolchain_builder.libxml2.lib_version}\n'
                            )
+            if with_runtimes:
+                dependencies += f'../lib/clang/{version.major_version()}/lib/windows\n'
             inputs_file.write(dependencies)
 
         if with_runtimes:
