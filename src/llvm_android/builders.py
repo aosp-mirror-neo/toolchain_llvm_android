@@ -25,7 +25,7 @@ import shutil
 import tempfile
 import textwrap
 
-from llvm_android import (base_builders, configs, constants, hosts, mapfile, paths, lfi_sysroot_helpers, timer, utils)
+from llvm_android import (base_builders, configs, constants, hosts, mapfile, paths, lfi_sysroot_helpers, timer, utils, version)
 
 class SanitizerMapFileBuilder(base_builders.Builder):
     name: str = 'sanitizer-mapfile'
@@ -1026,29 +1026,15 @@ class HostSysrootsBuilder(base_builders.Builder):
     def _build_config(self) -> None:
         config = self._config
         sysroot = config.sysroot
-        sysroot_lib = sysroot / 'lib'
         if sysroot.exists():
             shutil.rmtree(sysroot)
         sysroot.parent.mkdir(parents=True, exist_ok=True)
 
-        # Copy the sysroot.
-        shutil.copytree(config.gcc_root / config.gcc_triple,
-                        sysroot, symlinks=True)
-
-        if config.target_arch == hosts.Arch.I386:
-            shutil.rmtree(sysroot / 'lib')
-            (sysroot / 'lib64').unlink()
-            (sysroot / 'lib32').rename(sysroot / 'lib')
-        elif config.target_arch == hosts.Arch.X86_64:
-            shutil.rmtree(sysroot / 'lib32')
-
-        # Add libgcc* to the sysroot.
-        shutil.copytree(config.gcc_lib_dir, sysroot_lib, dirs_exist_ok=True)
-
-        # b/237425904 cleanup: uncomment to remove libstdc++ after toolchain defaults to
-        # libc++
-        # (sysroot_lib / 'libstdc++.a').unlink()
-        # shutil.rmtree(sysroot / 'include' / 'c++' / '4.8.3')
+        if config.target_arch == hosts.Arch.X86_64:
+            triple = 'x86_64-w64-mingw32'
+        else:
+            triple = 'i686-w64-mingw32'
+        shutil.copytree(paths.MINGW_ROOT / triple, sysroot, symlinks=True)
 
 
 class DeviceSysrootsBuilder(base_builders.Builder):
@@ -1404,6 +1390,41 @@ class DeviceLibcxxBuilder(base_builders.LLVMRuntimeBuilder):
         shutil.copy2(self.output_dir / 'include' / 'c++' / 'v1' / '__config_site', dst_inc_dir)
 
 
+class WinBuiltinsBuilder(BuiltinsBuilder):
+    name: str = 'win-builtins'
+
+    config_list: List[configs.Config] = [
+        configs.MinGWConfig(),
+        configs.MinGWConfig(is_32_bit=True),
+    ]
+
+    def install_config(self) -> None:
+        arch = self._config.target_arch.value
+        filename = f'libclang_rt.builtins-{arch}.a'
+        src_path = self.output_dir / 'lib' / self._config.target_os.crt_dir / filename
+        llvm_version = version.Version(paths.LLVM_PATH / 'cmake' / 'Modules' / 'LLVMVersion.cmake')
+        win_res_dir = (WindowsToolchainBuilder.install_dir / 'lib' / 'clang' /
+                       llvm_version.major_version() / 'lib' /
+                       self._config.target_os.crt_dir)
+        dst_dirs = [win_res_dir]
+        if self.toolchain.path != paths.CLANG_PREBUILT_DIR:
+            dst_dirs.append(self.resource_dir)
+        if self.output_toolchain and self.output_resource_dir not in dst_dirs:
+            dst_dirs.append(self.output_resource_dir)
+        for dst_dir in dst_dirs:
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_path, dst_dir / filename)
+
+    @property
+    def install_dir(self) -> Path:
+        if self._config.target_arch == hosts.Arch.I386:
+            return paths.OUT_DIR / 'windows-builtins-i686-install'
+        elif self._config.target_arch == hosts.Arch.X86_64:
+            return paths.OUT_DIR / 'windows-builtins-x86-64-install'
+        else:
+            raise NotImplementedError()
+
+
 class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
     name = 'win-libcxx'
     src_dir: Path = paths.LLVM_PATH / 'runtimes'
@@ -1416,6 +1437,11 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
             return paths.OUT_DIR / 'windows-libcxx-x86-64-install'
         else:
             raise NotImplementedError()
+
+    # Avoid linking the STL because it does not exist yet.
+    @property
+    def ldflags(self) -> List[str]:
+        return super().ldflags + ['-nostdlib++']
 
     @property
     def cmake_defines(self) -> Dict[str, str]:
@@ -1432,6 +1458,10 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
         defines['LIBCXX_TEST_LINKER_FLAGS'] = defines['CMAKE_EXE_LINKER_FLAGS']
         defines['LIBCXX_TARGET_TRIPLE'] = self._config.llvm_triple
         defines['LIBCXXABI_TARGET_TRIPLE'] = self._config.llvm_triple
+
+        # Match upstream libcxx/cmake/caches/MinGW.cmake so printf handles
+        # 80-bit long double on x86 MinGW.
+        defines['LIBCXX_EXTRA_SITE_DEFINES'] = '__USE_MINGW_ANSI_STDIO=1'
 
         # Build only the static library.
         defines['LIBCXX_ENABLE_SHARED'] = 'OFF'
@@ -1459,11 +1489,12 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
 
         win_install_dir = WindowsToolchainBuilder.install_dir
 
+        sysroot = self._config.sysroot
+        shutil.copy(self.install_dir / 'lib' / triple_dir / 'libunwind.a', sysroot / 'lib')
         if self._config.target_arch == hosts.Arch.X86_64:
             # Copy the x86-64 library and the non-target-specific headers to the sysroot. Clang
             # doesn't automatically find __config_site in a per-triple include directory, so copy
             # that header to the non-specific directory.
-            sysroot = self._config.sysroot
             shutil.copy(self.install_dir / 'lib' / triple_dir / 'libc++.a', sysroot / 'lib')
             shutil.copy(self.install_dir / 'lib' / triple_dir / 'libc++abi.a', sysroot / 'lib')
             shutil.copytree(self.install_dir / 'include' / 'c++' / 'v1',
@@ -1488,6 +1519,7 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
             lib_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.install_dir / 'lib' / triple_dir / 'libc++.a', lib_dir)
             shutil.copy(self.install_dir / 'lib' / triple_dir / 'libc++abi.a', lib_dir)
+            shutil.copy(self.install_dir / 'lib' / triple_dir / 'libunwind.a', lib_dir)
             include_dir = host_dir / 'include' / triple_dir / 'c++' / 'v1'
             include_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.install_dir / 'include' / triple_dir / 'c++' / 'v1' / '__config_site', include_dir)
@@ -1557,10 +1589,10 @@ class WindowsToolchainBuilder(base_builders.LLVMBuilder):
     def ldflags(self) -> List[str]:
         ldflags = super().ldflags
         if not self._is_msvc:
-            # Use static-libgcc to avoid runtime dependence on libgcc_eh.
+            # Use -static-libgcc to link libunwind statically (-l:libunwind.a).
             ldflags.append('-static-libgcc')
-            # pthread is needed by libgcc_eh.
-            ldflags.append('-pthread')
+            # This can't go in MinGWConfig or it will also be used for building libunwind itself.
+            ldflags.append('-unwindlib=libunwind')
 
             libpath_prefix = '-L'
         else:
