@@ -248,7 +248,8 @@ def extract_clang_version(clang_install: Path) -> version.Version:
 def build_target(android_base: Path, clang_version: version.Version,
                  target: str, modules: List[str],
                  max_jobs: int, with_tidy: bool, no_mlgo: bool,
-                 profiler: Optional[ProfileHandler]=None) -> None:
+                 profiler: Optional[ProfileHandler]=None,
+                 musl: bool=False) -> None:
     jobs = '-j{}'.format(max(1, min(max_jobs, multiprocessing.cpu_count())))
 
     env = utils.prepare_env(android_base, target)
@@ -271,6 +272,9 @@ def build_target(android_base: Path, clang_version: version.Version,
 
     if with_tidy:
         env['WITH_TIDY'] = '1'
+
+    if musl:
+        env['USE_HOST_MUSL'] = 'true'
 
     if profiler is not None:
         # lld calls _Exit as a speedup, which prevents it from writing the PGO
@@ -302,7 +306,7 @@ def build_target(android_base: Path, clang_version: version.Version,
 
 def test_device(android_base: Path, clang_version: version.Version, device: List[str],
                 modules: List[str], max_jobs: int, clean_output: str, flashall_path: Optional[Path],
-                with_tidy: bool, no_mlgo: bool) -> bool:
+                with_tidy: bool, no_mlgo: bool, musl: bool=False) -> bool:
     if not device or device[:3] == ['(no', 'serial', 'number)']:
         print('Device missing serial number')
         return True
@@ -322,7 +326,7 @@ def test_device(android_base: Path, clang_version: version.Version, device: List
     target = '-'.join([product, 'trunk_staging', 'eng'])
     try:
         build_target(android_base, clang_version, target, modules, max_jobs,
-                     with_tidy, no_mlgo)
+                     with_tidy, no_mlgo, musl=musl)
         if flashall_path is None:
             bin_path = (android_base / 'out' / 'host' /
                         hosts.build_tag() / 'bin')
@@ -452,7 +456,8 @@ def main():
             profiler = None
 
         build_target(Path(args.android_path), clang_version, args.target,
-                     modules, args.jobs, args.with_tidy, no_mlgo, profiler)
+                     modules, args.jobs, args.with_tidy, no_mlgo, profiler,
+                     musl=args.musl)
 
         if profiler is not None:
             profiler.mergeProfiles()
@@ -465,7 +470,7 @@ def main():
             result = test_device(Path(args.android_path), clang_version, device,
                                  modules, args.jobs, args.clean_built_target,
                                  Path(args.flashall_path) if args.flashall_path else None,
-                                 args.with_tidy, no_mlgo)
+                                 args.with_tidy, no_mlgo, musl=args.musl)
             if not result and not args.keep_going:
                 break
 
