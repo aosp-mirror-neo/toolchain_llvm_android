@@ -21,6 +21,8 @@ done
 mkdir dist
 # TODO(b/572944989): Disable CIPD auth check in Kokoro CI until network/auth is supported.
 export SOONG_CIPD_AUTH_CONFIG=disable
+# TODO(b/586969341): Remove once Siso Landlock works on KoRBE OverlayFS.
+export SOONG_ACTION_SANDBOXING=off
 DIST_DIR=dist \
 OUT_DIR=out \
 prebuilts/python/linux-x86/bin/python3 \
