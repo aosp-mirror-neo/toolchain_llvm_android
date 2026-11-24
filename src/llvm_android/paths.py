@@ -67,7 +67,7 @@ NDK_BASE: Path = TOOLCHAIN_DIR / 'prebuilts' / 'ndk' / 'releases' / constants.ND
 
 GCC_ROOT: Path = PREBUILTS_DIR / 'gcc' / 'linux-x86'
 GO_ROOT: Path = PREBUILTS_DIR / 'go' / hosts.build_tag()
-MINGW_ROOT: Path = PREBUILTS_DIR / 'gcc' / 'linux-x86' / 'host' / 'x86_64-w64-mingw32-4.8' / 'x86_64-w64-mingw32'
+MINGW_ROOT: Path = PREBUILTS_DIR / 'mingw'
 
 _WIN_ZLIB_PATH: Path = (PREBUILTS_DIR / 'clang' / 'host' / 'windows-x86' /
                         'toolchain-prebuilts' / 'zlib')

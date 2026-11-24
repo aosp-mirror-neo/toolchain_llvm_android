@@ -68,6 +68,7 @@ class Host(enum.Enum):
             Host.Android: 'linux',
             Host.Baremetal: 'baremetal',
             Host.Linux: 'linux',
+            Host.Windows: 'windows',
         }[self]
 
 
