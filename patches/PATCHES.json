@@ -1122,20 +1122,6 @@
     {
         "metadata": {
             "info": [],
-            "title": "[UPSTREAM] [clang][Sema] Check -Wunused-private-field at template instantiation instead of definition (#237374)"
-        },
-        "platforms": [
-            "android"
-        ],
-        "rel_patch_path": "cherry/a3e53216ebd1915ea99637c5bc1bbc33e6ad2153.patch",
-        "version_range": {
-            "from": 639965,
-            "until": 646451
-        }
-    },
-    {
-        "metadata": {
-            "info": [],
             "title": "[UPSTREAM] [LFI][AArch64] Do not save or restore LFI reserved registers (#241545)"
         },
         "platforms": [
@@ -1187,6 +1173,20 @@
         "version_range": {
             "from": 639965,
             "until": 647338
+        }
+    },
+    {
+        "metadata": {
+            "info": [],
+            "title": "[UPSTREAM] [libc++] Add _LIBCPP_NO_SANITIZE(\"cfi-unrelated-cast\") to __shared_ptr_emplace::__get_elem() (#244965)"
+        },
+        "platforms": [
+            "android"
+        ],
+        "rel_patch_path": "cherry/29dbd3ed4bf74129f8ea1393accecabe019f7bb3.patch",
+        "version_range": {
+            "from": 639965,
+            "until": 648488
         }
     },
     {
