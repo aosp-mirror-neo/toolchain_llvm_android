@@ -478,6 +478,73 @@ class MinGWConfig(_BaseConfig):
         return defines
 
 
+# TODO(b/435461051): Remove LegacyMinGWConfig once RELEASE_USE_CLANG_MINGW
+# rolls out and Soong stops compiling Windows host tools with GCC 4.8.3 MinGW.
+class LegacyMinGWConfig(_BaseConfig):
+    """Configuration for legacy GCC 4.8.3 MinGW runtime builds."""
+
+    target_os: hosts.Host = hosts.Host.Windows
+    gcc_root: Path = paths.GCC_ROOT / 'host' / 'x86_64-w64-mingw32-4.8'
+    gcc_triple: str = 'x86_64-w64-mingw32'
+    gcc_ver: str = '4.8.3'
+
+    def __init__(self, is_32_bit: bool = False):
+        self.is_32_bit = is_32_bit
+
+    @property
+    def bin_dirs(self) -> List[Path]:
+        return [self.gcc_root / self.gcc_triple / 'bin']
+
+    @property
+    def gcc_lib_dir(self) -> Path:
+        gcc_lib_dir = self.gcc_root / 'lib' / 'gcc' / self.gcc_triple / self.gcc_ver
+        if self.is_32_bit:
+            gcc_lib_dir = gcc_lib_dir / '32'
+        return gcc_lib_dir
+
+    @property
+    def target_arch(self) -> hosts.Arch:
+        return hosts.Arch.I386 if self.is_32_bit else hosts.Arch.X86_64
+
+    @property
+    def llvm_triple(self) -> str:
+        return 'i686-pc-windows-gnu' if self.is_32_bit else 'x86_64-pc-windows-gnu'
+
+    # The 'legacy-' prefix is only used for the temporary build sysroot under
+    # out/sysroots/; it is never packaged or exposed to Soong.
+    @property
+    def sysroot(self) -> Optional[Path]:
+        sysroot_dir = 'legacy-i686-w64-mingw32' if self.is_32_bit else 'legacy-x86_64-w64-mingw32'
+        return paths.SYSROOTS / sysroot_dir
+
+    @property
+    def output_suffix(self) -> str:
+        return '-legacy-windows32' if self.is_32_bit else '-legacy-windows'
+
+    @property
+    def cflags(self) -> List[str]:
+        cflags = super().cflags
+        cflags.append(f'--target={self.llvm_triple}')
+        cflags.append('-D_LARGEFILE_SOURCE')
+        cflags.append('-D_FILE_OFFSET_BITS=64')
+        cflags.append('-D_WIN32_WINNT=0x0A00')
+        cflags.append('-DWINVER=0x0A00')
+        cflags.append('-D__MSVCRT_VERSION__=0x1400')
+        if self.target_arch == hosts.Arch.I386:
+            cflags.append('-fsjlj-exceptions')
+        return cflags
+
+    @property
+    def ldflags(self) -> List[str]:
+        ldflags = super().ldflags
+        if not self.is_32_bit:
+            ldflags.append('-Wl,--dynamicbase')
+            ldflags.append('-Wl,--nxcompat')
+            ldflags.append('-Wl,--high-entropy-va')
+            ldflags.append('-Wl,--Xlink=-Brepro')
+        return ldflags
+
+
 class MSVCConfig(Config):
     """Configuration for MSVC toolchain."""
     target_os: hosts.Host = hosts.Host.Windows
