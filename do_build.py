@@ -93,7 +93,8 @@ def build_llvm_for_windows(enable_assertions: bool,
                            build_lldb: bool,
                            swig_builder: Optional[builders.SwigBuilder],
                            full_build: bool,
-                           build_simpleperf_readelf: bool):
+                           build_simpleperf_readelf: bool,
+                           build_legacy_mingw: bool):
     config_list: List[configs.Config]
     if win_sdk.is_enabled():
         config_list = [configs.MSVCConfig()]
@@ -105,16 +106,33 @@ def build_llvm_for_windows(enable_assertions: bool,
         shutil.rmtree(win_builder.install_dir)
 
     if not win_sdk.is_enabled():
+        # Build compiler-rt builtins
+        builders.WinBuiltinsBuilder().build()
+
+        mirror_ucrt = android_version.is_llvm_next()
+
         # Build and install libcxxabi and libcxx and use them to build Clang.
         libcxx_builder = builders.WinLibCxxBuilder(config_list)
         libcxx_builder.enable_assertions = enable_assertions
+        libcxx_builder.mirror_to_default = mirror_ucrt
         libcxx_builder.build()
 
         # Also build a 32-bit Windows libc++ for use with the platform
         # adb/fastboot.
         libcxx32_builder = builders.WinLibCxxBuilder([configs.MinGWConfig(is_32_bit=True)])
         libcxx32_builder.enable_assertions = enable_assertions
+        libcxx32_builder.mirror_to_default = mirror_ucrt
         libcxx32_builder.build()
+
+        # TODO(b/435461051): Remove legacy GCC 4.8.3 MinGW runtime builds once
+        # RELEASE_USE_CLANG_MINGW rolls out and Soong switches to prebuilts/mingw.
+        if build_legacy_mingw:
+            legacy_libcxx_builder = builders.WinLibCxxBuilder([
+                configs.LegacyMinGWConfig(),
+                configs.LegacyMinGWConfig(is_32_bit=True),
+            ])
+            legacy_libcxx_builder.enable_assertions = enable_assertions
+            legacy_libcxx_builder.build()
 
     lldb_bins: Set[str] = set()
 
@@ -156,6 +174,7 @@ def build_llvm_for_windows(enable_assertions: bool,
 
     if build_simpleperf_readelf:
         libsimpleperf_readelf_builder = builders.LibSimpleperfReadElfBuilder(config_list)
+        libsimpleperf_readelf_builder.mirror_to_default = android_version.is_llvm_next()
         if full_build:
             # The libs have been built in win_builder.
             extra_libs = win_builder.liblzma.link_libraries if win_builder.liblzma else None
@@ -163,9 +182,29 @@ def build_llvm_for_windows(enable_assertions: bool,
                 win_builder.output_dir / 'lib',
                 libsimpleperf_readelf_builder.install_dir,
                 extra_libs=extra_libs)
+            if libsimpleperf_readelf_builder.mirror_to_default:
+                dst_dir = (
+                    libsimpleperf_readelf_builder.output_toolchain.path
+                    / 'lib' / 'x86_64-w64-windows-gnu'
+                )
+                dst_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(
+                    libsimpleperf_readelf_builder.install_dir
+                    / libsimpleperf_readelf_builder.target_libname,
+                    dst_dir / libsimpleperf_readelf_builder.target_libname,
+                )
         else:
             libsimpleperf_readelf_builder.enable_assertions = enable_assertions
             libsimpleperf_readelf_builder.build()
+
+        # TODO(b/435461051): Remove legacy GCC 4.8.3 libsimpleperf_readelf build
+        # once RELEASE_USE_CLANG_MINGW rolls out.
+        if build_legacy_mingw:
+            legacy_readelf_builder = builders.LibSimpleperfReadElfBuilder(
+                [configs.LegacyMinGWConfig()]
+            )
+            legacy_readelf_builder.enable_assertions = enable_assertions
+            legacy_readelf_builder.build()
 
     return (win_builder, lldb_bins)
 
@@ -302,7 +341,7 @@ def install_license_files(install_dir: Path) -> None:
 def install_winpthreads(bin_dir: Path, lib_dir: Path) -> None:
     """Installs the winpthreads runtime to the Windows bin and lib directory."""
     lib_name = 'libwinpthread-1.dll'
-    lib_path = paths.MINGW_ROOT / 'bin' / lib_name
+    lib_path = paths.MINGW_ROOT / 'x86_64-w64-mingw32' / 'bin' / lib_name
 
     shutil.copy2(lib_path, lib_dir / lib_name)
     shutil.copy2(lib_path, bin_dir / lib_name)
@@ -598,11 +637,20 @@ def package_toolchain(toolchain_builder: LLVMBuilder,
             if necessary_lib_file.endswith('.a'):
                 verify_file_exists(lib_dir / 'i686-w64-windows-gnu', necessary_lib_file)
                 verify_file_exists(lib_dir / 'x86_64-w64-windows-gnu', necessary_lib_file)
+                # TODO(b/435461051): Remove '-ucrt' verification once
+                # RELEASE_USE_CLANG_MINGW rolls out.
+                if host.is_linux:
+                    verify_file_exists(lib_dir / 'i686-w64-windows-gnu-ucrt', necessary_lib_file)
+                    verify_file_exists(lib_dir / 'x86_64-w64-windows-gnu-ucrt', necessary_lib_file)
             if host.is_linux:
                 verify_file_exists(lib_dir / triple32, necessary_lib_file)
                 verify_file_exists(lib_dir / triple64, necessary_lib_file)
         elif necessary_lib_file == 'libsimpleperf_readelf.a' and host.is_linux:
             verify_file_exists(lib_dir / host_config.llvm_triple, necessary_lib_file)
+            verify_file_exists(lib_dir / 'x86_64-w64-windows-gnu', necessary_lib_file)
+            # TODO(b/435461051): Remove '-ucrt' verification once
+            # RELEASE_USE_CLANG_MINGW rolls out.
+            verify_file_exists(lib_dir / 'x86_64-w64-windows-gnu-ucrt', necessary_lib_file)
         else:
             verify_file_exists(lib_dir, necessary_lib_file)
 
@@ -725,6 +773,8 @@ def package_toolchain(toolchain_builder: LLVMBuilder,
                             f'../lib/clang/{version.major_version()}/include\n'
                             f'../lib/libxml2.so.{toolchain_builder.libxml2.lib_version}\n'
                            )
+            if with_runtimes:
+                dependencies += f'../lib/clang/{version.major_version()}/lib/windows\n'
             inputs_file.write(dependencies)
 
         if with_runtimes:
@@ -1244,8 +1294,23 @@ def main():
                            host_32bit_config=configs.host_32bit_config(musl))
 
     if need_windows or need_windows_libcxx:
-        # Host sysroots are currently setup only for Windows
-        builders.HostSysrootsBuilder().build()
+        # Host sysroots are currently setup only for Windows.
+        # TODO(b/435461051): Skip legacy GCC 4.8.3 on ToT (--build-llvm-next)
+        # because upstream libc++ >= r640712 requires _strtof_l; remove legacy
+        # builds once RELEASE_USE_CLANG_MINGW rolls out (before bumping past r640712).
+        build_legacy_mingw = (
+            need_host and need_windows_libcxx and not android_version.is_llvm_next()
+        )
+        sysroot_configs: List[configs.Config] = [
+            configs.MinGWConfig(),
+            configs.MinGWConfig(is_32_bit=True),
+        ]
+        if build_legacy_mingw:
+            sysroot_configs.extend([
+                configs.LegacyMinGWConfig(),
+                configs.LegacyMinGWConfig(is_32_bit=True),
+            ])
+        builders.HostSysrootsBuilder(sysroot_configs).build()
         if args.windows_sdk:
             win_sdk.set_path(Path(args.windows_sdk))
         win_builder, win_lldb_bins = build_llvm_for_windows(
@@ -1256,7 +1321,8 @@ def main():
             build_lldb=build_lldb,
             swig_builder=swig_builder,
             full_build=need_windows,
-            build_simpleperf_readelf=need_host)
+            build_simpleperf_readelf=need_host,
+            build_legacy_mingw=build_legacy_mingw)
     else:
         win_builder, win_lldb_bins = None, None
 

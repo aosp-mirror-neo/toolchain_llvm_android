@@ -31,9 +31,9 @@ class Version():
     def _parse_version_file(self, version_file: Path) -> None:
         with version_file.open() as vfile:
             text = vfile.read()
-        self.major = self._parse(text, 'CLANG_VERSION_MAJOR')
-        self.minor = self._parse(text, 'CLANG_VERSION_MINOR')
-        self.patch = self._parse(text, 'CLANG_VERSION_PATCHLEVEL')
+        self.major = self._parse(text, r'(?:CLANG|LLVM)_VERSION_MAJOR')
+        self.minor = self._parse(text, r'(?:CLANG|LLVM)_VERSION_MINOR')
+        self.patch = self._parse(text, r'(?:CLANG_VERSION_PATCHLEVEL|LLVM_VERSION_PATCH)')
 
     def long_version(self) -> str:
         """Returns a long version including major, minor and patch level."""
