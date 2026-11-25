@@ -1030,6 +1030,20 @@ class HostSysrootsBuilder(base_builders.Builder):
             shutil.rmtree(sysroot)
         sysroot.parent.mkdir(parents=True, exist_ok=True)
 
+        # TODO(b/435461051): Remove LegacyMinGWConfig handling once
+        # RELEASE_USE_CLANG_MINGW rolls out and Soong switches off GCC 4.8.3.
+        if isinstance(config, configs.LegacyMinGWConfig):
+            shutil.copytree(config.gcc_root / config.gcc_triple,
+                            sysroot, symlinks=True)
+            if config.target_arch == hosts.Arch.I386:
+                shutil.rmtree(sysroot / 'lib')
+                (sysroot / 'lib64').unlink()
+                (sysroot / 'lib32').rename(sysroot / 'lib')
+            elif config.target_arch == hosts.Arch.X86_64:
+                shutil.rmtree(sysroot / 'lib32')
+            shutil.copytree(config.gcc_lib_dir, sysroot / 'lib', dirs_exist_ok=True)
+            return
+
         if config.target_arch == hosts.Arch.X86_64:
             triple = 'x86_64-w64-mingw32'
         else:
@@ -1428,13 +1442,19 @@ class WinBuiltinsBuilder(BuiltinsBuilder):
 class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
     name = 'win-libcxx'
     src_dir: Path = paths.LLVM_PATH / 'runtimes'
+    mirror_to_default: bool = False
 
     @property
     def install_dir(self):
+        prefix = (
+            'windows-legacy-libcxx'
+            if isinstance(self._config, configs.LegacyMinGWConfig)
+            else 'windows-libcxx'
+        )
         if self._config.target_arch == hosts.Arch.I386:
-            return paths.OUT_DIR / 'windows-libcxx-i686-install'
+            return paths.OUT_DIR / f'{prefix}-i686-install'
         elif self._config.target_arch == hosts.Arch.X86_64:
-            return paths.OUT_DIR / 'windows-libcxx-x86-64-install'
+            return paths.OUT_DIR / f'{prefix}-x86-64-install'
         else:
             raise NotImplementedError()
 
@@ -1461,7 +1481,8 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
 
         # Match upstream libcxx/cmake/caches/MinGW.cmake so printf handles
         # 80-bit long double on x86 MinGW.
-        defines['LIBCXX_EXTRA_SITE_DEFINES'] = '__USE_MINGW_ANSI_STDIO=1'
+        if not isinstance(self._config, configs.LegacyMinGWConfig):
+            defines['LIBCXX_EXTRA_SITE_DEFINES'] = '__USE_MINGW_ANSI_STDIO=1'
 
         # Build only the static library.
         defines['LIBCXX_ENABLE_SHARED'] = 'OFF'
@@ -1487,10 +1508,12 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
         else:
             triple_dir = 'i686-w64-windows-gnu'
 
+        is_legacy = isinstance(self._config, configs.LegacyMinGWConfig)
         win_install_dir = WindowsToolchainBuilder.install_dir
 
         sysroot = self._config.sysroot
-        shutil.copy(self.install_dir / 'lib' / triple_dir / 'libunwind.a', sysroot / 'lib')
+        if not is_legacy:
+            shutil.copy(self.install_dir / 'lib' / triple_dir / 'libunwind.a', sysroot / 'lib')
         if self._config.target_arch == hosts.Arch.X86_64:
             # Copy the x86-64 library and the non-target-specific headers to the sysroot. Clang
             # doesn't automatically find __config_site in a per-triple include directory, so copy
@@ -1502,25 +1525,39 @@ class WinLibCxxBuilder(base_builders.LLVMRuntimeBuilder):
             shutil.copy(self.install_dir / 'include' / triple_dir / 'c++' / 'v1' / '__config_site',
                         sysroot / 'include' / 'c++' / 'v1')
 
-            # Copy the non-target-specific headers into the output Windows toolchain.
-            shutil.copytree(self.install_dir / 'include' / 'c++' / 'v1',
-                            win_install_dir / 'include' / 'c++' / 'v1',
-                            dirs_exist_ok=True)
+            if not is_legacy:
+                # Copy the non-target-specific headers into the output Windows toolchain.
+                shutil.copytree(self.install_dir / 'include' / 'c++' / 'v1',
+                                win_install_dir / 'include' / 'c++' / 'v1',
+                                dirs_exist_ok=True)
 
-            # Place the x86-64 __config_site header into the non-target-specific include directory.
-            # TODO: Maybe we don't need this header either.
-            shutil.copy(self.install_dir / 'include' / triple_dir / 'c++' / 'v1' / '__config_site',
-                        win_install_dir / 'include' / 'c++' / 'v1')
+                # Place the x86-64 __config_site header into the non-target-specific include
+                # directory. TODO: Maybe we don't need this header either.
+                shutil.copy(
+                    self.install_dir / 'include' / triple_dir / 'c++' / 'v1' / '__config_site',
+                    win_install_dir / 'include' / 'c++' / 'v1',
+                )
 
-        # Copy the per-triple libraries and __config_site header to per-triple
-        # lib/include directories in both the generated Linux and Windows toolchains.
-        for host_dir in [win_install_dir, Stage2Builder.install_dir]:
-            lib_dir = host_dir / 'lib' / triple_dir
+        # TODO(b/435461051): Remove the '-ucrt' split once RELEASE_USE_CLANG_MINGW
+        # rolls out and Soong switches off GCC 4.8.3 MinGW.
+        if is_legacy:
+            destinations = [(Stage2Builder.install_dir, triple_dir)]
+        else:
+            destinations = [
+                (win_install_dir, triple_dir),
+                (Stage2Builder.install_dir, f'{triple_dir}-ucrt'),
+            ]
+            if self.mirror_to_default:
+                destinations.append((Stage2Builder.install_dir, triple_dir))
+
+        for host_dir, dst_triple_dir in destinations:
+            lib_dir = host_dir / 'lib' / dst_triple_dir
             lib_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.install_dir / 'lib' / triple_dir / 'libc++.a', lib_dir)
             shutil.copy(self.install_dir / 'lib' / triple_dir / 'libc++abi.a', lib_dir)
-            shutil.copy(self.install_dir / 'lib' / triple_dir / 'libunwind.a', lib_dir)
-            include_dir = host_dir / 'include' / triple_dir / 'c++' / 'v1'
+            if not is_legacy:
+                shutil.copy(self.install_dir / 'lib' / triple_dir / 'libunwind.a', lib_dir)
+            include_dir = host_dir / 'include' / dst_triple_dir / 'c++' / 'v1'
             include_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy(self.install_dir / 'include' / triple_dir / 'c++' / 'v1' / '__config_site', include_dir)
 
@@ -1714,6 +1751,7 @@ class LibSimpleperfReadElfBuilder(base_builders.LLVMRuntimeBuilder):
 
     ninja_targets: List[str] = llvm_libs
     target_libname: str = 'libsimpleperf_readelf.a'
+    mirror_to_default: bool = False
 
     @property
     def cflags(self) -> List[str]:
@@ -1732,14 +1770,22 @@ class LibSimpleperfReadElfBuilder(base_builders.LLVMRuntimeBuilder):
 
     @property
     def install_dir(self) -> Path:
-        if self._config.target_os ==  hosts.Host.Windows:
+        # TODO(b/435461051): Remove LegacyMinGWConfig and '-ucrt' split once
+        # RELEASE_USE_CLANG_MINGW rolls out.
+        if isinstance(self._config, configs.LegacyMinGWConfig):
             return self.output_toolchain.path / 'lib' / 'x86_64-w64-windows-gnu'
+        if self._config.target_os == hosts.Host.Windows:
+            return self.output_toolchain.path / 'lib' / 'x86_64-w64-windows-gnu-ucrt'
         if self._config.target_os == hosts.Host.Linux and self._config.is_musl:
             return self.output_resource_dir / self._config.llvm_triple / 'lib'
         return super().install_dir
 
     def install_config(self) -> None:
         self.build_readelf_lib(self.output_dir / 'lib', self.install_dir)
+        if self.mirror_to_default:
+            dst_dir = self.output_toolchain.path / 'lib' / 'x86_64-w64-windows-gnu'
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.install_dir / self.target_libname, dst_dir / self.target_libname)
 
     def build_readelf_lib(self,
                           llvm_lib_dir: Path,
